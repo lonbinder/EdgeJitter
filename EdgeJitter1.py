@@ -69,18 +69,12 @@ def calculate_jitter_direction(sketch, startPoint, endPoint, dominantAxis, cutOu
 
 
 def createHemiCircle(sketch, selectedLine, startPoint, endPoint, dominantAxis, cutOutSize, direction):
-    # We'll use these values at the end to find the newly created line segments
-    selectedLineStartPoint = selectedLine.startSketchPoint.geometry
-    selectedLineEndPoint = selectedLine.endSketchPoint.geometry
-
     # Calculate the center point and the size of the cut-out
     centerPoint = adsk.core.Point3D.create((startPoint.x + endPoint.x) / 2, 
                                             (startPoint.y + endPoint.y) / 2, 
                                             (startPoint.z + endPoint.z) / 2)
     radius = round(cutOutSize / 2, 3)
 
-    # TODO: change the arc creation based on direction
-    
     if direction == Direction.POSITIVE_Y or direction == Direction.NEGATIVE_X:
         startPoint = adsk.core.Point3D.create(centerPoint.x + radius if dominantAxis == 'x' else centerPoint.x, 
                                                 centerPoint.y + radius if dominantAxis == 'y' else centerPoint.y, 
@@ -98,21 +92,12 @@ def createHemiCircle(sketch, selectedLine, startPoint, endPoint, dominantAxis, c
 
     newArc = sketch.sketchCurves.sketchArcs.addByCenterStartEnd(centerPoint, startPoint, endPoint)
 
-    selectedLineCollection = adsk.core.ObjectCollection.create()
-    selectedLineCollection.add(selectedLine)
-    (returnValue, intersectingCurves, intersectionPoints) = newArc.intersections(selectedLineCollection)
-
-    resultingCurveParts = cleanSelectedLine(selectedLine, selectedLineStartPoint, selectedLineEndPoint,
-        centerPoint, startPoint, endPoint)
+    resultingCurveParts = cleanSelectedLine(selectedLine, newArc)
 
     return resultingCurveParts
 
 
 def createRectangle(sketch, selectedLine, startPoint, endPoint, dominantAxis, cutOutSize, direction):
-    # We'll use these values at the end to find the newly created line segments
-    selectedLineStartPoint = selectedLine.startSketchPoint.geometry
-    selectedLineEndPoint = selectedLine.endSketchPoint.geometry
-
     # Calculate the center point and the size of the cut-out
     centerPoint = adsk.core.Point3D.create((startPoint.x + endPoint.x) / 2, 
                                             (startPoint.y + endPoint.y) / 2, 
@@ -140,8 +125,7 @@ def createRectangle(sketch, selectedLine, startPoint, endPoint, dominantAxis, cu
     newRect = sketch.sketchCurves.sketchLines.addTwoPointRectangle(rect_start, rect_end)
 
     # Find intersections and trim the original line
-    resultingCurveParts = None
-    foundRectEdge = False
+    newRectLine = None
     for line in newRect:
         line_start_point = line.startSketchPoint.geometry
         line_end_point = line.endSketchPoint.geometry
@@ -151,58 +135,67 @@ def createRectangle(sketch, selectedLine, startPoint, endPoint, dominantAxis, cu
         if line_dominant_axis == dominantAxis:
             line_non_dom_axis = 'y' if line_dominant_axis == 'x' else 'x'
             if line_start_point.__getattribute__(line_non_dom_axis) == startPoint.__getattribute__(line_non_dom_axis):
-                foundRectEdge = True
+                newRectLine = line
+                break
 
-        if foundRectEdge:
-            resultingCurveParts = cleanSelectedLine(selectedLine, selectedLineStartPoint, selectedLineEndPoint,
-                    line_start_point, line_start_point, line_end_point)
-            line.deleteMe()
-            break
+    resultingCurveParts = cleanSelectedLine(selectedLine, newRectLine)
+    newRectLine.deleteMe()
 
     return resultingCurveParts
 
 
-def cleanSelectedLine(selectedLine, selectedLineStartPoint, selectedLineEndPoint, breakPoint, 
-                      newLineStartPoint, newLineEndPoint):
-    # create array potentialNewCurvesSet as potential final set of curves to return
-    potentialNewCurvesSet = adsk.core.ObjectCollection.create()
-    newCurves = selectedLine.split(newLineStartPoint)
-    for curve in newCurves:
-        potentialNewCurvesSet.add(curve)
-    for curve in newCurves:
+def cleanSelectedLine(originalCurve, newCurve):
+    """
+    Cleans up the originalCurve by removing the segment defined by newCurve.
+
+    This function splits the originalCurve at the start and end points of newCurve,
+    identifies the segment overlapping with newCurve, and deletes it. The function
+    returns the remaining segments of the originalCurve as an ObjectCollection.
+
+    Parameters:
+        originalCurve (SketchCurve): The curve to be cleaned, containing the segment to remove.
+        newCurve (SketchCurve): The curve that defines the segment on the originalCurve to be deleted.
+
+    Returns:
+        ObjectCollection of SketchCurve objects: The set of remaining curve segments after the specified segment has been removed.
+
+    Raises:
+        RuntimeError: If the overlapping segment cannot be found and removed.
+    """
+
+    newCurveStartPoint = newCurve.startSketchPoint.geometry
+    newCurveEndPoint = newCurve.endSketchPoint.geometry
+
+    # First, try to split the original curve at the startpoint of the new curve
+    potentialNewCurvesSet = originalCurve.split(newCurveStartPoint)
+
+    # Second, we're not sure which of the curves has the end point, so check each and split
+    for curve in potentialNewCurvesSet:
         try:
-            localNewCurves = curve.split(newLineEndPoint)
+            localNewCurves = curve.split(newCurveEndPoint)
             for curve in localNewCurves:
                 if not curve in potentialNewCurvesSet:
                     potentialNewCurvesSet.add(curve)
             break
         except Exception as e:
             pass
-                        
-    for curve in newCurves:
-        curve_start_point = curve.startSketchPoint.geometry
-        curve_end_point = curve.endSketchPoint.geometry
-        if curve_start_point.x in [newLineStartPoint.x, newLineEndPoint.x] \
-                and curve_start_point.y in [newLineStartPoint.y, newLineEndPoint.y] \
-                and curve_end_point.x in [newLineStartPoint.x, newLineEndPoint.x] \
-                and curve_end_point.y in [newLineStartPoint.y, newLineEndPoint.y]:
-                curve.deleteMe()
-                potentialNewCurvesSet.removeByItem(curve)
-                break
-
-    resultingCurveParts = adsk.core.ObjectCollection.create()
-
-    # Collect the remaining parts of the original line
+    
+    # Third, find the middle curve portion (of the original curve) and delete it
+    curveToDelete = None
     for curve in potentialNewCurvesSet:
         curveStartPoint = curve.startSketchPoint.geometry
         curveEndPoint = curve.endSketchPoint.geometry
-        if curveStartPoint.isEqualTo(selectedLineStartPoint) \
-                or curveStartPoint.isEqualTo(selectedLineEndPoint) \
-                or curveEndPoint.isEqualTo(selectedLineStartPoint) \
-                or curveEndPoint.isEqualTo(selectedLineEndPoint):
-            resultingCurveParts.add(curve)
+        if (curveStartPoint.isEqualTo(newCurveStartPoint) or curveStartPoint.isEqualTo(newCurveEndPoint)) \
+                and (curveEndPoint.isEqualTo(newCurveStartPoint) or curveEndPoint.isEqualTo(newCurveEndPoint)):
+            curveToDelete = curve
+            break
+    if curveToDelete is None:
+        raise RuntimeError(f"Unable to find middle curve for new curve start {newCurveStartPoint} and end {newCurveEndPoint}.") 
+        
+    potentialNewCurvesSet.removeByItem(curveToDelete)
+    curveToDelete.deleteMe()
 
-    return resultingCurveParts
+    return potentialNewCurvesSet
 
 
 def getUserInputSize(ui, lineLength):
@@ -246,27 +239,28 @@ def getUserInputSize(ui, lineLength):
 
 
 def recursiveCut(selectedLine, startPoint, endPoint, dominantAxis, cutOutSize):
+    sketch = selectedLine.parentSketch
+
     # Randomly decide if the cut out is convex or concave
     cutOutType = random.choice(['convex', 'concave'])
-    cutOutType = 'concave'
-
-    sketch = selectedLine.parentSketch
     direction = calculate_jitter_direction(sketch, startPoint, endPoint, dominantAxis, cutOutType)
-    # newSelectedCurves = createRectangle(sketch, selectedLine, startPoint, endPoint, 
-    #         dominantAxis, cutOutSize, direction)
-    newSelectedCurves = createHemiCircle(sketch, selectedLine, startPoint, endPoint, 
+    
+    # Randomly decide the type of cut to make
+    createFunction = random.choice([createRectangle, createHemiCircle])
+    
+    newSelectedCurves = createFunction(sketch, selectedLine, startPoint, endPoint, 
             dominantAxis, cutOutSize, direction)
     
-    # for recurseCurve in newSelectedCurves:
-    #     # Make sure the segment to be cut is three times the size of the cut so that the
-    #     # remaining pieces of the segment are proportionate to the cut size
-    #     if recurseCurve.length < (cutOutSize * 3):
-    #         continue
-    #     else:
-    #         recurseCurveStartPoint = recurseCurve.startSketchPoint.geometry
-    #         recurseCurveEndPoint = recurseCurve.endSketchPoint.geometry
-    #         recursiveCut(recurseCurve, recurseCurveStartPoint, 
-    #                 recurseCurveEndPoint, dominantAxis, cutOutSize)
+    for recurseCurve in newSelectedCurves:
+        # Make sure the segment to be cut is three times the size of the cut so that the
+        # remaining pieces of the segment are proportionate to the cut size
+        if recurseCurve.length < (cutOutSize * 3):
+            continue
+        else:
+            recurseCurveStartPoint = recurseCurve.startSketchPoint.geometry
+            recurseCurveEndPoint = recurseCurve.endSketchPoint.geometry
+            recursiveCut(recurseCurve, recurseCurveStartPoint, 
+                    recurseCurveEndPoint, dominantAxis, cutOutSize)
 
 
 def run(context):
