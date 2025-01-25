@@ -9,7 +9,7 @@ class Direction(Enum):
     POSITIVE_Y = auto()
     NEGATIVE_Y = auto()
 
-def get_selected_line(ui):
+def getSelectedLine(ui):
     # Get the current active selection
     selections = ui.activeSelections
     if selections.count != 1:
@@ -25,42 +25,42 @@ def get_selected_line(ui):
     return selectedLine
 
 
-def calculate_jitter_direction(sketch, startPoint, endPoint, dominantAxis, cutOutType):
+def calculateJitterDirection(sketch, startPoint, endPoint, dominantAxis, cutOutType):
     shapeAxis = 'y' if dominantAxis == 'x' else 'x'
-    line_pos = (startPoint.__getattribute__(shapeAxis) + endPoint.__getattribute__(shapeAxis)) / 2
+    linePos = (startPoint.__getattribute__(shapeAxis) + endPoint.__getattribute__(shapeAxis)) / 2
 
-    farthest_distance = 0
-    farthest_point = None
+    farthestDistance = 0
+    farthestPoint = None
 
     # Iterate through sketch points to find the farthest point along the dominant axis
     for point in sketch.sketchPoints:
         if point.isVisible:  # Consider only visible points
             point_pos = point.geometry.__getattribute__(shapeAxis)
-            distance = abs(point_pos - line_pos)
-            if distance > farthest_distance:
-                farthest_distance = distance
-                farthest_point = point_pos
+            distance = abs(point_pos - linePos)
+            if distance > farthestDistance:
+                farthestDistance = distance
+                farthestPoint = point_pos
 
     # Determine the jitter direction based on the farthest point
     if shapeAxis == 'x':
         if cutOutType == 'concave':
-            if farthest_point >= startPoint.x:
+            if farthestPoint >= startPoint.x:
                 direction = Direction.POSITIVE_X
             else:
                 direction = Direction.NEGATIVE_X
         else:
-            if farthest_point >= startPoint.x:
+            if farthestPoint >= startPoint.x:
                 direction = Direction.NEGATIVE_X
             else:
                 direction = Direction.POSITIVE_X
     else:
         if cutOutType == 'concave':
-            if farthest_point >= startPoint.y:
+            if farthestPoint >= startPoint.y:
                 direction = Direction.POSITIVE_Y
             else:
                 direction = Direction.NEGATIVE_Y
         else:
-            if farthest_point >= startPoint.y:
+            if farthestPoint >= startPoint.y:
                 direction = Direction.NEGATIVE_Y
             else:
                 direction = Direction.POSITIVE_Y
@@ -68,7 +68,24 @@ def calculate_jitter_direction(sketch, startPoint, endPoint, dominantAxis, cutOu
     return direction
 
 
-def createHemiCircle(sketch, selectedLine, startPoint, endPoint, dominantAxis, cutOutSize, direction):
+def createHemiCircle(sketch, selectedCurve, startPoint, endPoint, dominantAxis, cutOutSize, direction):
+    """
+    Adds a hemi-circle cut out on the selectedLine in the given sketch based on the specified parameters.
+
+    Parameters:
+        sketch (Sketch): The Autodesk Fusion 360 sketch where the cut will be created.
+        selectedCurve (SketchCurve): The user-selected SketchCurve onto which a new cut will be added.
+        startPoint (Point3D): The starting point of the selectedCurve.
+        endPoint (Point3D): The ending point of the selectedCurve.
+        dominantAxis (str): The axis ('x' or 'y') that determines the direction of expansion.
+        cutOutSize (float): The total length of the cut along the dominant axis.
+        direction (Direction): The direction to make cut, this must not be along the dominant axis.
+
+    Returns:
+        ObjectCollection of SketchCurve objects: Returns the remaining selectedCurve parts after the
+        cut has been created and the original selectedCurve modified or trimmed accordingly.
+    """
+
     # Calculate the center point and the size of the cut-out
     centerPoint = adsk.core.Point3D.create((startPoint.x + endPoint.x) / 2, 
                                             (startPoint.y + endPoint.y) / 2, 
@@ -92,12 +109,29 @@ def createHemiCircle(sketch, selectedLine, startPoint, endPoint, dominantAxis, c
 
     newArc = sketch.sketchCurves.sketchArcs.addByCenterStartEnd(centerPoint, startPoint, endPoint)
 
-    resultingCurveParts = cleanSelectedLine(selectedLine, newArc)
+    resultingCurveParts = cleanSelectedCurve(selectedCurve, newArc)
 
     return resultingCurveParts
 
 
-def createRectangle(sketch, selectedLine, startPoint, endPoint, dominantAxis, cutOutSize, direction):
+def createRectangle(sketch, selectedCurve, startPoint, endPoint, dominantAxis, cutOutSize, direction):
+    """
+    Adds a rectangle cut out on the selectedLine in the given sketch based on the specified parameters.
+
+    Parameters:
+        sketch (Sketch): The Autodesk Fusion 360 sketch where the cut will be created.
+        selectedCurve (SketchCurve): The user-selected SketchCurve onto which a new cut will be added.
+        startPoint (Point3D): The starting point of the selectedCurve.
+        endPoint (Point3D): The ending point of the selectedCurve.
+        dominantAxis (str): The axis ('x' or 'y') that determines the direction of expansion.
+        cutOutSize (float): The total length of the cut along the dominant axis.
+        direction (Direction): The direction to make cut, this must not be along the dominant axis.
+
+    Returns:
+        ObjectCollection of SketchCurve objects: Returns the remaining selectedCurve parts after the
+        cut has been created and the original selectedCurve modified or trimmed accordingly.
+    """
+
     # Calculate the center point and the size of the cut-out
     centerPoint = adsk.core.Point3D.create((startPoint.x + endPoint.x) / 2, 
                                             (startPoint.y + endPoint.y) / 2, 
@@ -107,44 +141,44 @@ def createRectangle(sketch, selectedLine, startPoint, endPoint, dominantAxis, cu
     # Based on the 'direction', position the new rectangle
     if direction == Direction.POSITIVE_X:
         # Move rectangle rightwards along the X-axis
-        rect_start = adsk.core.Point3D.create(centerPoint.x + 2 * delta, centerPoint.y - delta, 0)
-        rect_end = adsk.core.Point3D.create(centerPoint.x, centerPoint.y + delta, 0)
+        rectStart = adsk.core.Point3D.create(centerPoint.x + 2 * delta, centerPoint.y - delta, 0)
+        rectEnd = adsk.core.Point3D.create(centerPoint.x, centerPoint.y + delta, 0)
     elif direction == Direction.NEGATIVE_X:
         # Move rectangle leftwards along the X-axis
-        rect_start = adsk.core.Point3D.create(centerPoint.x, centerPoint.y - delta, 0)
-        rect_end = adsk.core.Point3D.create(centerPoint.x - 2 * delta, centerPoint.y + delta, 0)
+        rectStart = adsk.core.Point3D.create(centerPoint.x, centerPoint.y - delta, 0)
+        rectEnd = adsk.core.Point3D.create(centerPoint.x - 2 * delta, centerPoint.y + delta, 0)
     elif direction == Direction.POSITIVE_Y:
         # Move rectangle upwards along the Y-axis
-        rect_start = adsk.core.Point3D.create(centerPoint.x - delta, centerPoint.y + 2 * delta, 0)
-        rect_end = adsk.core.Point3D.create(centerPoint.x + delta, centerPoint.y, 0)
+        rectStart = adsk.core.Point3D.create(centerPoint.x - delta, centerPoint.y + 2 * delta, 0)
+        rectEnd = adsk.core.Point3D.create(centerPoint.x + delta, centerPoint.y, 0)
     elif direction == Direction.NEGATIVE_Y:
         # Move rectangle downwards along the Y-axis
-        rect_start = adsk.core.Point3D.create(centerPoint.x - delta, centerPoint.y, 0)
-        rect_end = adsk.core.Point3D.create(centerPoint.x + delta, centerPoint.y - 2 * delta, 0)
+        rectStart = adsk.core.Point3D.create(centerPoint.x - delta, centerPoint.y, 0)
+        rectEnd = adsk.core.Point3D.create(centerPoint.x + delta, centerPoint.y - 2 * delta, 0)
 
-    newRect = sketch.sketchCurves.sketchLines.addTwoPointRectangle(rect_start, rect_end)
+    newRect = sketch.sketchCurves.sketchLines.addTwoPointRectangle(rectStart, rectEnd)
 
     # Find intersections and trim the original line
     newRectLine = None
     for line in newRect:
-        line_start_point = line.startSketchPoint.geometry
-        line_end_point = line.endSketchPoint.geometry
+        lineStartPoint = line.startSketchPoint.geometry
+        lineEndPoint = line.endSketchPoint.geometry
 
         # make sure this line coincides with the selected line
-        line_dominant_axis = 'x' if abs(line_end_point.x - line_start_point.x) > abs(line_end_point.y - line_start_point.y) else 'y'
-        if line_dominant_axis == dominantAxis:
-            line_non_dom_axis = 'y' if line_dominant_axis == 'x' else 'x'
-            if line_start_point.__getattribute__(line_non_dom_axis) == startPoint.__getattribute__(line_non_dom_axis):
+        lineDominantAxis = 'x' if abs(lineEndPoint.x - lineStartPoint.x) > abs(lineEndPoint.y - lineStartPoint.y) else 'y'
+        if lineDominantAxis == dominantAxis:
+            lineNonDominantAxis = 'y' if lineDominantAxis == 'x' else 'x'
+            if lineStartPoint.__getattribute__(lineNonDominantAxis) == startPoint.__getattribute__(lineNonDominantAxis):
                 newRectLine = line
                 break
 
-    resultingCurveParts = cleanSelectedLine(selectedLine, newRectLine)
+    resultingCurveParts = cleanSelectedCurve(selectedCurve, newRectLine)
     newRectLine.deleteMe()
 
     return resultingCurveParts
 
 
-def cleanSelectedLine(originalCurve, newCurve):
+def cleanSelectedCurve(originalCurve, newCurve):
     """
     Cleans up the originalCurve by removing the segment defined by newCurve.
 
@@ -200,32 +234,32 @@ def cleanSelectedLine(originalCurve, newCurve):
 
 def getUserInputSize(ui, lineLength):
     # Decide how big cut out should be
-    (user_input, cancelled) = ui.inputBox("What size for jitter (% or cm)", "Jitter size", "3%")
+    (userInput, cancelled) = ui.inputBox("What size for jitter (% or cm)", "Jitter size", "3%")
     if cancelled:
         return None
 
     # Trim and remove any spaces
-    user_input = user_input.strip()
+    userInput = userInput.strip()
     
     # Check if the input ends with a '%' indicating a percentage
-    if '%' in user_input:
+    if '%' in userInput:
         try:
             # Remove the '%' and convert to float
-            percentage_value = float(user_input[:-1])
+            percentageValue = float(userInput[:-1])
             # Calculate the size as a percentage of the line length
-            size = round(lineLength * (percentage_value / 100), 3)
+            size = round(lineLength * (percentageValue / 100), 3)
         except ValueError:
             ui.messageBox("Invalid percentage format. Please enter a valid number.")
             return None
     else:
         try:
             # Extract the numeric part of the input using regular expressions
-            numeric_part = re.findall(r"[-+]?\d*\.\d+|\d+", user_input)
-            if not numeric_part:
+            numericPart = re.findall(r"[-+]?\d*\.\d+|\d+", userInput)
+            if not numericPart:
                 ui.messageBox("Please enter a valid numeric value for centimeters.")
                 return None
             # Assume the first found number is the size in millimeters
-            size = round(float(numeric_part[0]), 3)
+            size = round(float(numericPart[0]), 3)
         except ValueError:
             ui.messageBox("Invalid centimeter format. Please enter a valid number.")
             return None
@@ -243,13 +277,12 @@ def recursiveCut(selectedLine, startPoint, endPoint, dominantAxis, cutOutSize):
 
     # Randomly decide if the cut out is convex or concave
     cutOutType = random.choice(['convex', 'concave'])
-    direction = calculate_jitter_direction(sketch, startPoint, endPoint, dominantAxis, cutOutType)
+    direction = calculateJitterDirection(sketch, startPoint, endPoint, dominantAxis, cutOutType)
     
     # Randomly decide the type of cut to make
     createFunction = random.choice([createRectangle, createHemiCircle])
     
-    newSelectedCurves = createFunction(sketch, selectedLine, startPoint, endPoint, 
-            dominantAxis, cutOutSize, direction)
+    newSelectedCurves = createFunction(sketch, selectedLine, startPoint, endPoint, dominantAxis, cutOutSize, direction)
     
     for recurseCurve in newSelectedCurves:
         # Make sure the segment to be cut is three times the size of the cut so that the
@@ -269,7 +302,7 @@ def run(context):
         app = adsk.core.Application.get()
         ui = app.userInterface
 
-        selectedLine = get_selected_line(ui)
+        selectedLine = getSelectedLine(ui)
         if selectedLine is None:
             return
 
