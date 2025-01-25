@@ -1,0 +1,10 @@
+{
+	"autodeskProduct":	"Fusion",
+	"type":	"script",
+	"author":	"Lon Binder",
+	"description":	{
+		"":	"Attempt to procedurally jitter the edge of a rectangle"
+	},
+	"supportedOS":	"windows|mac",
+	"editEnabled":	true
+}
