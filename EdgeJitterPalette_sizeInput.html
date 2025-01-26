@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <title>Jitter size configuration</title>
+    <script>
+        function sendValues() {
+            const minSize = document.getElementById('minSize').value;
+            const maxSize = document.getElementById('maxSize').value;
+            var args = {
+                minSize : minSize,
+                maxSize : maxSize
+                };
+            adsk.fusionSendData("send", JSON.stringify(args));
+        }
+
+        document.addEventListener("DOMContentLoaded", () => {
+        let adskWaiter = setInterval(() => {
+            if (window.adsk) {
+                clearInterval(adskWaiter);
+
+                adsk.fusionSendData("DOMContentLoaded", "{}")
+                    .then((response) => {
+                        document.getElementById("p1").innerHTML += '<br/>'+ response;
+                    });
+
+                // Add click listener for the button
+                document.addEventListener("click", (event) => {
+                    if (event.target && event.target.id === "btn1") {
+                        let minSize = document.getElementById('minSize').value;
+                        let maxSize = document.getElementById('maxSize').value;
+                        let args = {
+                            minSize : minSize,
+                            maxSize : maxSize
+                            };
+
+                        adsk.fusionSendData("buttonPushed", JSON.stringify(args))
+                            .then((response) => {
+                            // Replace the content of <p id="p1"> with the response
+                            document.getElementById("p1").innerHTML += '<br/>'+ response;
+                            });
+                    }
+                });
+            }
+        }, 100);
+        });
+    </script>
+</head>
+<body>
+    <label for="minSize">Minimum cut size (cm):</label>
+    <input type="number" id="minSize" name="minSize" min="1" max="50" value="10" step="1">
+    <br />
+    <label for="maxSize">Maximum cut size (cm):</label>
+    <input type="number" id="maxSize" name="maxSize" min="1" max="100" value="20" step="1">
+    <br />
+    <button onclick="sendValues()" id="btn1">Submit</button>
+    <br />
+    <div id="p1" style="margin-top: 20px; color: green; font-size: small;">
+    </div>
+</body>
+</html>
