@@ -1,6 +1,5 @@
 import adsk.core, adsk.fusion, adsk.cam, traceback
 import json
-import os
 import random
 from datetime import datetime
 import re  # Import regular expressions
@@ -278,6 +277,31 @@ class JitterProcessor:
         adsk.autoTerminate(False)
 
 
+    @staticmethod
+    def randomSize(minSize, maxSize):
+        """
+        Generate a random size between minSize and maxSize, rounded to the nearest 10% increment of minSize.
+
+        Parameters:
+            minSize (float): The minimum size.
+            maxSize (float): The maximum size.
+
+        Returns:
+            float: A random size between minSize and maxSize, rounded to the nearest increment 
+                where the increment is 10% of minSize.
+        """
+
+        # Determine the increment (10% of minSize)
+        step = 0.1 * minSize
+        
+        # Choose a random value between minSize and maxSize
+        value = random.uniform(minSize, maxSize)
+        
+        # Round the value to the nearest increment
+        rounded_value = round(value / step) * step
+        return rounded_value
+
+
     def recursiveCut(self, selectedLine, startPoint, endPoint, dominantAxis, minSize, maxSize, recurse):
         # Randomly decide if the cut out is convex or concave
         cutOutType = random.choice(['convex', 'concave'])
@@ -286,13 +310,16 @@ class JitterProcessor:
         # Randomly decide the type of cut to make
         createFunction = random.choice([self.createRectangle, self.createHemiCircle])
         
-        newSelectedCurves = createFunction(selectedLine, startPoint, endPoint, dominantAxis, maxSize, direction)
+        # Randomly decide cut size
+        cutSize = self.randomSize(minSize, maxSize)
+
+        newSelectedCurves = createFunction(selectedLine, startPoint, endPoint, dominantAxis, cutSize, direction)
         
         if recurse:
             for recurseCurve in newSelectedCurves:
                 # Make sure the segment to be cut is three times the size of the cut so that the
                 # remaining pieces of the segment are proportionate to the cut size
-                if recurseCurve.length < (maxSize * 3):
+                if recurseCurve.length < (cutSize * 3):
                     continue
                 else:
                     recurseCurveStartPoint = recurseCurve.startSketchPoint.geometry
@@ -365,19 +392,16 @@ class JitterProcessor:
                 cmd = adsk.core.Command.cast(args.command)
 
                 cmd.isRepeatable = False
+                cmd.setDialogMinimumSize(200, 150)
 
                 # inputs
                 inputs: adsk.core.CommandInputs = cmd.commandInputs
                 
-                # inputs.addBoolValueInput('inputRecurseOption', 'Recurse?', True)
-                # inputs.addFloatSliderCommandInput('inputFloatSliderMinSize', 'Min Size', 'cm', 0, 100)
-                # inputs.addFloatSliderCommandInput('inputFloatSliderMaxSize', 'Max Size', 'cm', 0, 100)
                 inputs.addBrowserCommandInput(
                     'browserIptId',
                     '',
                     'EdgeJitterPalette_sizeInput.html',
-                    300,
-                    100
+                    200
                 )
 
                 # events
@@ -396,27 +420,6 @@ class JitterProcessor:
                 onExecutePreview = self.parent.MyExecutePreviewHandler(self.parent)
                 cmd.executePreview.add(onExecutePreview)
                 self.parent.handlers.append(onExecutePreview)
-
-                # # Set up and display the web palette
-                # htmlFilePath = 'file:///' + os.path.join(os.path.dirname(__file__), 'EdgeJitterPalette_sizeInput.html').replace('\\', '/')
-                # self.palette = self.ui.palettes.itemById('cutSizePalette')
-                # if not self.palette:
-                #     self.palette = self.ui.palettes.add('cutSizePalette', 'Jitter size configuration', htmlFilePath, True, True, True, 300, 150)
-                    
-                #     # Attach the event handler
-                #     handler = self.UserInputEventHandler() #self.callbackFromSizeInput)
-                #     self.palette.incomingFromHTML.add(handler)
-                #     self.handlers.append(handler)  # Keep a reference to avoid garbage collection
-
-                    
-                #     # Add handler to CloseEvent of the palette.
-                #     onClosed = self.UserInputCloseEventHandler()
-                #     self.palette.closed.add(onClosed)
-                #     self.handlers.append(onClosed)   
-                # else:
-                #     self.palette.isVisible = True
-
-
 
                 # # Decide how big cut out should be
                 # (userInput, cancelled) = ui.inputBox("What size for jitter (% or cm)", "Jitter size", "3%")

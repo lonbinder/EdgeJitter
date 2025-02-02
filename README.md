@@ -11,7 +11,12 @@ Planned shapes:
  - Arc+line combos
 
 Potential additional features to add:
- - Change the cut size to have a range (min/max) and allow random cuts between those sizes
  - SketchCurve on Z-axis
  - Selecting multiple SketchCurves
    - Operating on the corner if multiple SketchCurves intersect
+
+TODO:
+ - Fix bug when 'ok' is clicked before 'preview' and the user jumped from one numeric input direclty to 'ok'. That skips the input changed event and throws a UI error.
+ - Fix bug that seems to be only when recurse is used, and 'preview' is hit repeatedly, it throws an error for a deleted curve.
+ - Re-format the HTML, looks terrible.
+ - Support percentage input

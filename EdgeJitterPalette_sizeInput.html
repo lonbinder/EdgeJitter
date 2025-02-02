@@ -34,8 +34,10 @@
 
                         adsk.fusionSendData("buttonPushed", JSON.stringify(args))
                             .then((response) => {
-                            // Replace the content of <p id="p1"> with the response
-                            document.getElementById("p1").innerHTML += '<br/>'+ response;
+                                if (response && response.trim() !== "") {
+                                    // Replace the content of <p id="p1"> with the response
+                                    document.getElementById("p1").innerHTML += '<br/>'+ response;
+                                }
                             });
                     }
                 });
@@ -55,6 +57,7 @@
     <br />
     <label for="maxSize">Maximum cut size (cm):</label>
     <input type="number" id="maxSize" name="maxSize" min="1" max="100" value="" step="1">
+    <br />
     <br />
     <button id="preview">Preview</button>
     <br />
