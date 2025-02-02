@@ -1,4 +1,4 @@
-# EdgeJitter1
+# EdgeJitter
 API script for Autodesk Fusion 360. Takes a line in sketch and "jitters" it (adding random convex, concave shapes). Today, this only supports work on SketchLine curves that are along the X or Y axis. 
 
 Currently supported shapes:
