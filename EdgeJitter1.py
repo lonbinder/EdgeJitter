@@ -1,4 +1,6 @@
 import adsk.core, adsk.fusion, adsk.cam, traceback
+import json
+import os
 import random
 from datetime import datetime
 import re  # Import regular expressions
@@ -18,36 +20,42 @@ class JitterProcessor:
 
     def __init__(self, ui):
         self.ui = ui
-        self.selectedCurve = None
+        self.selectedLine = None
+        self.sketch = None
         self.startPoint = None
         self.endPoint = None
         self.dominantAxis = None
         self.minSize = None
         self.maxSize = None
+        self.recurse = None
         self.handlers = []
+        self.previewDisplayed = False
+        self.previewRequested = False
 
 
     # ----- METHODS -----
 
     def getSelectedLine(self):
-        if self.selectedCurve is None:
+        if self.selectedLine is None:
             # Get the current active selection
             selections = self.ui.activeSelections
             if selections.count != 1:
                 self.ui.messageBox('Please select exactly one line in a sketch.')
                 return None
 
-            self.selectedCurve = selections[0].entity
+            self.selectedLine = selections[0].entity
             
             # Ensure the selected entity is a sketch line
-            if not isinstance(self.selectedCurve, adsk.fusion.SketchLine):
-                self.selectedCurve = None
+            if not isinstance(self.selectedLine, adsk.fusion.SketchLine):
+                self.selectedLine = None
                 self.ui.messageBox('Selected entity is not a line. Please select a line in a sketch.')
+
+            self.sketch = self.selectedLine.parentSketch
             
-        return self.selectedCurve
+        return self.selectedLine
 
 
-    def calculateJitterDirection(self, sketch, startPoint, endPoint, dominantAxis, cutOutType):
+    def calculateJitterDirection(self, startPoint, endPoint, dominantAxis, cutOutType):
         shapeAxis = 'y' if dominantAxis == 'x' else 'x'
         linePos = (startPoint.__getattribute__(shapeAxis) + endPoint.__getattribute__(shapeAxis)) / 2
 
@@ -55,7 +63,7 @@ class JitterProcessor:
         farthestPoint = None
 
         # Iterate through sketch points to find the farthest point along the dominant axis
-        for point in sketch.sketchPoints:
+        for point in self.sketch.sketchPoints:
             if point.isVisible:  # Consider only visible points
                 point_pos = point.geometry.__getattribute__(shapeAxis)
                 distance = abs(point_pos - linePos)
@@ -90,12 +98,11 @@ class JitterProcessor:
         return direction
 
 
-    def createHemiCircle(self, sketch, selectedCurve, startPoint, endPoint, dominantAxis, cutOutSize, direction):
+    def createHemiCircle(self, selectedCurve, startPoint, endPoint, dominantAxis, cutOutSize, direction):
         """
         Adds a hemi-circle cut out on the selectedLine in the given sketch based on the specified parameters.
 
         Parameters:
-            sketch (Sketch): The Autodesk Fusion 360 sketch where the cut will be created.
             selectedCurve (SketchCurve): The user-selected SketchCurve onto which a new cut will be added.
             startPoint (Point3D): The starting point of the selectedCurve.
             endPoint (Point3D): The ending point of the selectedCurve.
@@ -129,19 +136,18 @@ class JitterProcessor:
                                                     centerPoint.y + radius if dominantAxis == 'y' else centerPoint.y, 
                                                     centerPoint.z)
 
-        newArc = sketch.sketchCurves.sketchArcs.addByCenterStartEnd(centerPoint, startPoint, endPoint)
+        newArc = self.sketch.sketchCurves.sketchArcs.addByCenterStartEnd(centerPoint, startPoint, endPoint)
 
         resultingCurveParts = self.cleanSelectedCurve(selectedCurve, newArc)
 
         return resultingCurveParts
 
 
-    def createRectangle(self, sketch, selectedCurve, startPoint, endPoint, dominantAxis, cutOutSize, direction):
+    def createRectangle(self, selectedCurve, startPoint, endPoint, dominantAxis, cutOutSize, direction):
         """
         Adds a rectangle cut out on the selectedCurve in the given sketch based on the specified parameters.
 
         Parameters:
-            sketch (Sketch): The Autodesk Fusion 360 sketch where the cut will be created.
             selectedCurve (SketchCurve): The user-selected SketchCurve onto which a new cut will be added.
             startPoint (Point3D): The starting point of the selectedCurve.
             endPoint (Point3D): The ending point of the selectedCurve.
@@ -178,7 +184,7 @@ class JitterProcessor:
             rectStart = adsk.core.Point3D.create(centerPoint.x - delta, centerPoint.y, 0)
             rectEnd = adsk.core.Point3D.create(centerPoint.x + delta, centerPoint.y - 2 * delta, 0)
 
-        newRect = sketch.sketchCurves.sketchLines.addTwoPointRectangle(rectStart, rectEnd)
+        newRect = self.sketch.sketchCurves.sketchLines.addTwoPointRectangle(rectStart, rectEnd)
 
         # Find intersections and trim the original line
         newRectLine = None
@@ -271,101 +277,81 @@ class JitterProcessor:
         cmdDef.execute()
         adsk.autoTerminate(False)
 
-        # # Trim and remove any spaces
-        # userInput = userInput.strip()
-        
-        # # Check if the input ends with a '%' indicating a percentage
-        # if '%' in userInput:
-        #     try:
-        #         # Remove the '%' and convert to float
-        #         percentageValue = float(userInput[:-1])
-        #         # Calculate the size as a percentage of the line length
-        #         size = round(lineLength * (percentageValue / 100), 3)
-        #     except ValueError:
-        #         ui.messageBox("Invalid percentage format. Please enter a valid number.")
-        #         return None
-        # else:
-        #     try:
-        #         # Extract the numeric part of the input using regular expressions
-        #         numericPart = re.findall(r"[-+]?\d*\.\d+|\d+", userInput)
-        #         if not numericPart:
-        #             ui.messageBox("Please enter a valid numeric value for centimeters.")
-        #             return None
-        #         # Assume the first found number is the size in millimeters
-        #         size = round(float(numericPart[0]), 3)
-        #     except ValueError:
-        #         ui.messageBox("Invalid centimeter format. Please enter a valid number.")
-        #         return None
-        
-        # # Check if the calculated/entered size is reasonable
-        # if size <= 0 or size >= lineLength:
-        #     ui.messageBox("Jitter size must be positive and cannot exceed the length of the line.")
-        #     return None
-
-
-    @staticmethod
-    def checkCutSize(curveLength, maxCutLength):
-        """
-        Make sure the segment to be cut is three times the size of the cut so that the
-        remaining pieces of the segment are proportionate to the cut size
-
-        Parameters:
-            curveLength (Float): The length of the curve to cut.
-            maxCutLength (Float): The maximum length of the cut to make in the curve.
-
-        Returns:
-            Boolean: True if valid cut length; False if not
-        """
-        return curveLength >= (maxCutLength * 3)
-
 
     def recursiveCut(self, selectedLine, startPoint, endPoint, dominantAxis, minSize, maxSize, recurse):
-        if not self.checkCutSize(selectedLine.length, maxSize):
-            return None
-
-        sketch = selectedLine.parentSketch
-
         # Randomly decide if the cut out is convex or concave
         cutOutType = random.choice(['convex', 'concave'])
-        direction = self.calculateJitterDirection(sketch, startPoint, endPoint, dominantAxis, cutOutType)
+        direction = self.calculateJitterDirection(startPoint, endPoint, dominantAxis, cutOutType)
         
         # Randomly decide the type of cut to make
         createFunction = random.choice([self.createRectangle, self.createHemiCircle])
-        createFunction = self.createHemiCircle
         
-        newSelectedCurves = createFunction(sketch, selectedLine, startPoint, endPoint, dominantAxis, 
-                maxSize, direction)
+        newSelectedCurves = createFunction(selectedLine, startPoint, endPoint, dominantAxis, maxSize, direction)
         
         if recurse:
             for recurseCurve in newSelectedCurves:
-                recurseCurveStartPoint = recurseCurve.startSketchPoint.geometry
-                recurseCurveEndPoint = recurseCurve.endSketchPoint.geometry
-                self.recursiveCut(recurseCurve, recurseCurveStartPoint, 
-                        recurseCurveEndPoint, dominantAxis, minSize, maxSize, recurse)
+                # Make sure the segment to be cut is three times the size of the cut so that the
+                # remaining pieces of the segment are proportionate to the cut size
+                if recurseCurve.length < (maxSize * 3):
+                    continue
+                else:
+                    recurseCurveStartPoint = recurseCurve.startSketchPoint.geometry
+                    recurseCurveEndPoint = recurseCurve.endSketchPoint.geometry
+                    self.recursiveCut(recurseCurve, recurseCurveStartPoint, 
+                            recurseCurveEndPoint, dominantAxis, minSize, maxSize, recurse)
 
+    def setParams(self, minSize, maxSize, recurse):
+        self.setMinSize(minSize)
+        self.setMaxSize(maxSize)
+        self.setRecurse(recurse)
 
-    def callbackFromSizeInput(self, minSize, maxSize, recurse):
-        if minSize is None or maxSize is None:
-            return  # Handle error or invalid input
-        
+    def setMinSize(self, minSize):
         self.minSize = minSize
-        self.maxSize = maxSize
+        return self.minSize
 
-        self.recursiveCut(self.selectedCurve, self.startPoint, self.endPoint, self.dominantAxis, 
-                          self.minSize, self.maxSize, recurse)
+    def setMaxSize(self, maxSize):
+        self.maxSize = maxSize
+        return self.maxSize
+
+    def setRecurse(self, recurse):
+        self.recurse = recurse
+        return self.recurse
+
+    def callbackFromSizeInput(self):
+        if self.minSize is None or self.maxSize is None:
+            self.ui.messageBox("Must provide valid, numeric input sizes.")
+        
+        elif self.minSize <= 0 or self.maxSize >= 100 or self.minSize > self.maxSize:
+            self.ui.messageBox("Ensure min is less than max and within the valid range.")
+
+        else:
+            self.recursiveCut(self.selectedLine, self.startPoint, self.endPoint, self.dominantAxis, 
+                          self.minSize, self.maxSize, self.recurse)
+            return True
+        
+        return False
 
     def run(self):
-        self.selectedCurve = self.getSelectedLine()
-        if self.selectedCurve is None:
+        self.selectedLine = self.getSelectedLine()
+        if self.selectedLine is None:
             return
 
         # Get the start and end points of the line
-        self.startPoint = self.selectedCurve.startSketchPoint.geometry
-        self.endPoint = self.selectedCurve.endSketchPoint.geometry
+        self.startPoint = self.selectedLine.startSketchPoint.geometry
+        self.endPoint = self.selectedLine.endSketchPoint.geometry
         # Determine the direction relative to the dominant axis
         self.dominantAxis = 'x' if abs(self.endPoint.x - self.startPoint.x) > abs(self.endPoint.y - self.startPoint.y) else 'y'
         
         self.getUserInputSize()
+
+
+    def stop(self):
+        try:
+            # TODO: Stop properly
+            pass
+        except:
+            if self.parent.ui:
+                self.parent.ui.messageBox('Failed:\n{}'.format(traceback.format_exc()))
 
     
     # ----- INNER CLASSES -----
@@ -378,66 +364,187 @@ class JitterProcessor:
             try:
                 cmd = adsk.core.Command.cast(args.command)
 
+                cmd.isRepeatable = False
+
                 # inputs
                 inputs: adsk.core.CommandInputs = cmd.commandInputs
                 
-                inputs.addBoolValueInput('inputRecurseOption', 'Recurse?', True)
-                inputs.addFloatSliderCommandInput('inputFloatSliderMinSize', 'Min Size', 'cm', 0, 100)
-                inputs.addFloatSliderCommandInput('inputFloatSliderMaxSize', 'Max Size', 'cm', 0, 100)
-                
-                runButton = inputs.addBoolValueInput('buttonRun', 'Run', False, '', True)
+                # inputs.addBoolValueInput('inputRecurseOption', 'Recurse?', True)
+                # inputs.addFloatSliderCommandInput('inputFloatSliderMinSize', 'Min Size', 'cm', 0, 100)
+                # inputs.addFloatSliderCommandInput('inputFloatSliderMaxSize', 'Max Size', 'cm', 0, 100)
+                inputs.addBrowserCommandInput(
+                    'browserIptId',
+                    '',
+                    'EdgeJitterPalette_sizeInput.html',
+                    300,
+                    100
+                )
 
                 # events
                 onDestroy = self.parent.MyDestroyHandler(self.parent)
                 cmd.destroy.add(onDestroy)
                 self.parent.handlers.append(onDestroy)
 
-                onInputChanged = self.parent.MyCommandInputChangedHandler(self.parent)
-                cmd.inputChanged.add(onInputChanged)
-                self.parent.handlers.append(onInputChanged)
+                onIncomingFromHTML = self.parent.UserInputEventHandler(self.parent)
+                cmd.incomingFromHTML.add(onIncomingFromHTML)
+                self.parent.handlers.append(onIncomingFromHTML)
+
+                onExecute = self.parent.MyExecuteHandler(self.parent)
+                cmd.execute.add(onExecute)
+                self.parent.handlers.append(onExecute)
+
+                onExecutePreview = self.parent.MyExecutePreviewHandler(self.parent)
+                cmd.executePreview.add(onExecutePreview)
+                self.parent.handlers.append(onExecutePreview)
+
+                # # Set up and display the web palette
+                # htmlFilePath = 'file:///' + os.path.join(os.path.dirname(__file__), 'EdgeJitterPalette_sizeInput.html').replace('\\', '/')
+                # self.palette = self.ui.palettes.itemById('cutSizePalette')
+                # if not self.palette:
+                #     self.palette = self.ui.palettes.add('cutSizePalette', 'Jitter size configuration', htmlFilePath, True, True, True, 300, 150)
+                    
+                #     # Attach the event handler
+                #     handler = self.UserInputEventHandler() #self.callbackFromSizeInput)
+                #     self.palette.incomingFromHTML.add(handler)
+                #     self.handlers.append(handler)  # Keep a reference to avoid garbage collection
+
+                    
+                #     # Add handler to CloseEvent of the palette.
+                #     onClosed = self.UserInputCloseEventHandler()
+                #     self.palette.closed.add(onClosed)
+                #     self.handlers.append(onClosed)   
+                # else:
+                #     self.palette.isVisible = True
+
+
+
+                # # Decide how big cut out should be
+                # (userInput, cancelled) = ui.inputBox("What size for jitter (% or cm)", "Jitter size", "3%")
+                # if cancelled:
+                #     return None
+
+                # # Trim and remove any spaces
+                # userInput = userInput.strip()
+                
+                # # Check if the input ends with a '%' indicating a percentage
+                # if '%' in userInput:
+                #     try:
+                #         # Remove the '%' and convert to float
+                #         percentageValue = float(userInput[:-1])
+                #         # Calculate the size as a percentage of the line length
+                #         size = round(lineLength * (percentageValue / 100), 3)
+                #     except ValueError:
+                #         ui.messageBox("Invalid percentage format. Please enter a valid number.")
+                #         return None
+                # else:
+                #     try:
+                #         # Extract the numeric part of the input using regular expressions
+                #         numericPart = re.findall(r"[-+]?\d*\.\d+|\d+", userInput)
+                #         if not numericPart:
+                #             ui.messageBox("Please enter a valid numeric value for centimeters.")
+                #             return None
+                #         # Assume the first found number is the size in millimeters
+                #         size = round(float(numericPart[0]), 3)
+                #     except ValueError:
+                #         ui.messageBox("Invalid centimeter format. Please enter a valid number.")
+                #         return None
+                
+                # # Check if the calculated/entered size is reasonable
+                # if size <= 0 or size >= lineLength:
+                #     ui.messageBox("Jitter size must be positive and cannot exceed the length of the line.")
+                #     return None
+
 
             except:
                 self.parent.ui.messageBox('Failed:\n{}'.format(traceback.format_exc()))
 
-    class MyCommandInputChangedHandler(adsk.core.InputChangedEventHandler):
+
+    class MyExecuteHandler(adsk.core.CommandEventHandler):
         def __init__(self, parent):
             super().__init__()
             self.parent = parent
 
         def notify(self, args):
             try:
-                eventArgs = adsk.core.InputChangedEventArgs.cast(args)
-                inputs = eventArgs.inputs
-                cmdInput = eventArgs.input
-                if cmdInput.id == 'buttonRun':
-                    try:
-                        minSize = inputs.itemById('inputFloatSliderMinSize').valueOne
-                        maxSize = inputs.itemById('inputFloatSliderMaxSize').valueOne
-                        recurse = inputs.itemById('inputRecurseOption').value
-                        if minSize <= 0 or maxSize >= 100 or minSize > maxSize:
-                            self.parent.ui.messageBox("Invalid input sizes. Ensure min & max are both valid numbers and min is less than max and within the valid range.")
-                        else:
-                            self.parent.callbackFromSizeInput(minSize, maxSize, recurse)
-
-                    except:
-                        self.parent.ui.messageBox('Failed:\n{}'.format(traceback.format_exc()))    
-        
+                self.parent.callbackFromSizeInput()
             except:
-                self.parent.ui.messageBox('Failed:\n{}'.format(traceback.format_exc()))  
-    
+                if self.parent.ui:
+                    self.parent.ui.messageBox('Failed:\n{}'.format(traceback.format_exc()))
+
+
+    class MyExecutePreviewHandler(adsk.core.CommandEventHandler):
+        def __init__(self, parent):
+            super().__init__()
+            self.parent = parent
+
+        def notify(self, args):
+            """
+            This is run upon preview requests. We only build the preview when manually requested
+            on button push. Each preview request, re-generates the result from scratch (i.e. 
+            may look different on each request).
+            """
+            if self.parent.previewRequested is True:
+                eventArgs = adsk.core.CommandEventArgs.cast(args)
+                try:
+                    # if a valid callback, mark preview displayed
+                    self.parent.previewDisplayed = self.parent.callbackFromSizeInput()
+                    eventArgs.isValidResult = self.parent.previewDisplayed
+                    self.parent.previewRequested = False
+                except:
+                    if self.parent.ui:
+                        self.parent.ui.messageBox('Failed:\n{}'.format(traceback.format_exc()))
+
+
+    class UserInputEventHandler(adsk.core.HTMLEventHandler):
+        def __init__(self, parent):
+            super().__init__()
+            self.parent = parent
+
+        def notify(self, args):
+            if args.action == 'DOMContentLoaded':
+                pass
+                # args.returnData = "In like flynn"
+
+            elif args.action == 'fieldChanged':
+                try:
+                    # This method will be called when an HTML event is fired
+                    htmlArgs = adsk.core.HTMLEventArgs.cast(args)
+                    data = json.loads(htmlArgs.data)
+
+                    if data.get('field') == 'minSize':
+                        self.parent.setMinSize(float(data.get('value')))
+
+                    elif data.get('field') == 'maxSize':
+                        self.parent.setMaxSize(float(data.get('value')))
+                    
+                    elif data.get('field') == 'recurse':
+                        self.parent.setRecurse(bool(data.get('value')))
+                except:
+                    self.parent.ui.messageBox('Failed:\n{}'.format(traceback.format_exc()))     
+
+            elif args.action == 'buttonPushed':
+                try:
+                    # This method will be called when an HTML event is fired
+                    htmlArgs = adsk.core.HTMLEventArgs.cast(args)
+                    data = json.loads(htmlArgs.data)
+                    
+                    if data.get('buttonName') == 'preview':
+                        self.parent.previewRequested = True
+                        cmd = args.browserCommandInput.parentCommand
+                        cmd.doExecutePreview()
+
+                    # args.returnData = f'min: {minSize}; max: {maxSize}'
+                except:
+                    self.parent.ui.messageBox('Failed:\n{}'.format(traceback.format_exc()))        
+
     class MyDestroyHandler(adsk.core.CommandEventHandler):
         def __init__(self, parent):
             super().__init__()
             self.parent = parent
         def notify(self, args: adsk.core.CommandEventArgs):
-            try:
-                # When the command is done, terminate the script
-                # This will release all globals which will remove all event handlers
-                adsk.terminate()
-            except:
-                self.parent.ui.messageBox('Failed:\n{}'.format(traceback.format_exc()))
+            adsk.terminate() 
 
-    # Event handler for the close event.
+    # Event handler for the palette close event.
     class UserInputCloseEventHandler(adsk.core.UserInterfaceGeneralEventHandler):
         def __init__(self, parent):
             super().__init__()
@@ -460,4 +567,4 @@ def run(context):
 
 def stop(context):
     if context.get('IsApplicationClosing', False):
-        pass
+        _processor.stop()

@@ -4,15 +4,6 @@
     <meta charset="UTF-8" />
     <title>Jitter size configuration</title>
     <script>
-        function sendValues() {
-            const minSize = document.getElementById('minSize').value;
-            const maxSize = document.getElementById('maxSize').value;
-            var args = {
-                minSize : minSize,
-                maxSize : maxSize
-                };
-            adsk.fusionSendData("send", JSON.stringify(args));
-        }
 
         document.addEventListener("DOMContentLoaded", () => {
         let adskWaiter = setInterval(() => {
@@ -23,15 +14,22 @@
                     .then((response) => {
                         document.getElementById("p1").innerHTML += '<br/>'+ response;
                     });
+                
+                const fields = document.querySelectorAll('input[type="number"], input[type="checkbox"]');
+                fields.forEach(field => {
+                    field.addEventListener('change', (event) => {
+                        const fieldName = event.target.name;
+                        const value = event.target.type === 'checkbox' ? event.target.checked : event.target.value;
+                        const args = { field: fieldName, value: value };
+                        adsk.fusionSendData("fieldChanged", JSON.stringify(args));
+                    });
+                });
 
-                // Add click listener for the button
+                // Add click listener for the preview button
                 document.addEventListener("click", (event) => {
-                    if (event.target && event.target.id === "btn1") {
-                        let minSize = document.getElementById('minSize').value;
-                        let maxSize = document.getElementById('maxSize').value;
+                    if (event.target && event.target.id === "preview") {
                         let args = {
-                            minSize : minSize,
-                            maxSize : maxSize
+                            buttonName : 'preview'
                             };
 
                         adsk.fusionSendData("buttonPushed", JSON.stringify(args))
@@ -47,13 +45,18 @@
     </script>
 </head>
 <body>
+    <label for="recurse">
+        <input type="checkbox" id="recurse" name="recurse" />
+        Recurse?
+    </label>
+    <br />
     <label for="minSize">Minimum cut size (cm):</label>
-    <input type="number" id="minSize" name="minSize" min="1" max="50" value="10" step="1">
+    <input type="number" id="minSize" name="minSize" min="1" max="50" value="" step="1">
     <br />
     <label for="maxSize">Maximum cut size (cm):</label>
-    <input type="number" id="maxSize" name="maxSize" min="1" max="100" value="20" step="1">
+    <input type="number" id="maxSize" name="maxSize" min="1" max="100" value="" step="1">
     <br />
-    <button onclick="sendValues()" id="btn1">Submit</button>
+    <button id="preview">Preview</button>
     <br />
     <div id="p1" style="margin-top: 20px; color: green; font-size: small;">
     </div>
