@@ -1,10 +1,10 @@
 import adsk.core
 import adsk.fusion
 from constants import Direction
-from utils import calc_center_point, clean_selected_curve
+import utils
 
-def create_shape(selectedCurve: adsk.fusion.SketchCurve, startPoint: adsk.core.Point3D, 
-                       endPoint: adsk.core.Point3D, dominantAxis, cutOutSize: float, 
+def create_shape(selected_curve: adsk.fusion.SketchCurve, start_point: adsk.core.Point3D, 
+                       end_point: adsk.core.Point3D, dominant_axis, cut_out_size: float, 
                        direction: Direction):
     """
     Adds a hemi-circle cut out on the selectedLine in the given sketch based on the specified parameters.
@@ -22,24 +22,31 @@ def create_shape(selectedCurve: adsk.fusion.SketchCurve, startPoint: adsk.core.P
         cut has been created and the original selectedCurve modified or trimmed accordingly.
     """
 
-    centerPoint = calc_center_point(startPoint, endPoint)
-    radius = round(cutOutSize / 2, 3)
+    center_point = utils.calc_center_point(start_point, end_point)
+    arc_width_radius = round(cut_out_size / 2, 3)
+    arc_height_radius = utils.random_size(arc_width_radius * .1, arc_width_radius)
 
     if direction in (Direction.POSITIVE_Y, Direction.NEGATIVE_X):
-        sp = adsk.core.Point3D.create(centerPoint.x + (radius if dominantAxis=='x' else 0),
-                                      centerPoint.y + (radius if dominantAxis=='y' else 0),
-                                      centerPoint.z)
-        ep = adsk.core.Point3D.create(centerPoint.x - (radius if dominantAxis=='x' else 0),
-                                      centerPoint.y - (radius if dominantAxis=='y' else 0),
-                                      centerPoint.z)
+        arc_start_point = adsk.core.Point3D.create(center_point.x + (arc_width_radius if dominant_axis=='x' else 0),
+                                      center_point.y + (arc_width_radius if dominant_axis=='y' else 0),
+                                      center_point.z)
+        arc_end_point = adsk.core.Point3D.create(center_point.x - (arc_width_radius if dominant_axis=='x' else 0),
+                                      center_point.y - (arc_width_radius if dominant_axis=='y' else 0),
+                                      center_point.z)
+        arc_mid_point = adsk.core.Point3D.create(center_point.x - (arc_height_radius if dominant_axis=='y' else 0),
+                                      center_point.y + (arc_height_radius if dominant_axis=='x' else 0),
+                                      center_point.z)
     else:
-        sp = adsk.core.Point3D.create(centerPoint.x - (radius if dominantAxis=='x' else 0),
-                                      centerPoint.y - (radius if dominantAxis=='y' else 0),
-                                      centerPoint.z)
-        ep = adsk.core.Point3D.create(centerPoint.x + (radius if dominantAxis=='x' else 0),
-                                      centerPoint.y + (radius if dominantAxis=='y' else 0),
-                                      centerPoint.z)
+        arc_start_point = adsk.core.Point3D.create(center_point.x - (arc_width_radius if dominant_axis=='x' else 0),
+                                      center_point.y - (arc_width_radius if dominant_axis=='y' else 0),
+                                      center_point.z)
+        arc_end_point = adsk.core.Point3D.create(center_point.x + (arc_width_radius if dominant_axis=='x' else 0),
+                                      center_point.y + (arc_width_radius if dominant_axis=='y' else 0),
+                                      center_point.z)
+        arc_mid_point = adsk.core.Point3D.create(center_point.x + (arc_height_radius if dominant_axis=='y' else 0),
+                                      center_point.y - (arc_height_radius if dominant_axis=='x' else 0),
+                                      center_point.z)
 
-    sketch = selectedCurve.parentSketch
-    newArc = sketch.sketchCurves.sketchArcs.addByCenterStartEnd(centerPoint, sp, ep)
-    return clean_selected_curve(selectedCurve, newArc)
+    sketch = selected_curve.parentSketch
+    newArc = sketch.sketchCurves.sketchArcs.addByThreePoints(arc_start_point, arc_mid_point, arc_end_point)
+    return utils.clean_selected_curve(selected_curve, newArc)

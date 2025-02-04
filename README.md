@@ -2,12 +2,11 @@
 API script for Autodesk Fusion 360. Takes a line in sketch and "jitters" it (adding random convex, concave shapes). Today, this only supports work on SketchLine curves that are along the X or Y axis. 
 
 Currently supported shapes:
- - Fixed rectangle (square)
- - Hemi-circle (half a circle as an arc)
+ - Rectangles
+ - Arcs (hemi-ellipses)
+ - Triangles
 
 Planned shapes:
- - Random rectangle ratios
- - Random depth arcs (not hemi-circles)
  - Arc+line combos
 
 Potential additional features to add:
@@ -20,3 +19,7 @@ TODO:
  - Fix bug that seems to be only when recurse is used, and 'preview' is hit repeatedly, it throws an error for a deleted curve.
  - Re-format the HTML, looks terrible.
  - Support percentage input
+
+
+ General guidance
+  - We're following PEP8

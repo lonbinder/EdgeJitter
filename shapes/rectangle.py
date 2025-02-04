@@ -1,10 +1,10 @@
 import adsk.core
 import adsk.fusion
 from constants import Direction
-from utils import calc_center_point, clean_selected_curve
+import utils
 
-def create_shape(selectedCurve: adsk.fusion.SketchCurve, startPoint: adsk.core.Point3D, 
-                       endPoint: adsk.core.Point3D, dominantAxis, cutOutSize: float, 
+def create_shape(selected_curve: adsk.fusion.SketchCurve, start_point: adsk.core.Point3D, 
+                       end_point: adsk.core.Point3D, dominant_axis, cut_out_size: float, 
                        direction: Direction):
     """
     Adds a rectangle cut out on the selectedCurve in the given sketch based on the specified parameters.
@@ -21,39 +21,40 @@ def create_shape(selectedCurve: adsk.fusion.SketchCurve, startPoint: adsk.core.P
         ObjectCollection of SketchCurve objects: Returns the remaining selectedCurve parts after the
         cut has been created and the original selectedCurve modified or trimmed accordingly.
     """
-    centerPoint = calc_center_point(startPoint, endPoint)
-    delta = round(cutOutSize / 2, 3)
+    center_point = utils.calc_center_point(start_point, end_point)
+    width_delta = round(cut_out_size / 2, 3)
+    height_delta = utils.random_size(width_delta * .1, width_delta)
 
     if direction is Direction.POSITIVE_X:
-        rectStart = adsk.core.Point3D.create(centerPoint.x + 2*delta, centerPoint.y - delta, 0)
-        rectEnd   = adsk.core.Point3D.create(centerPoint.x, centerPoint.y + delta, 0)
+        rect_start = adsk.core.Point3D.create(center_point.x + 2*height_delta, center_point.y - width_delta, 0)
+        rect_end   = adsk.core.Point3D.create(center_point.x, center_point.y + width_delta, 0)
     elif direction is Direction.NEGATIVE_X:
-        rectStart = adsk.core.Point3D.create(centerPoint.x, centerPoint.y - delta, 0)
-        rectEnd   = adsk.core.Point3D.create(centerPoint.x - 2*delta, centerPoint.y + delta, 0)
+        rect_start = adsk.core.Point3D.create(center_point.x, center_point.y - width_delta, 0)
+        rect_end   = adsk.core.Point3D.create(center_point.x - 2*height_delta, center_point.y + width_delta, 0)
     elif direction is Direction.POSITIVE_Y:
-        rectStart = adsk.core.Point3D.create(centerPoint.x - delta, centerPoint.y + 2*delta, 0)
-        rectEnd   = adsk.core.Point3D.create(centerPoint.x + delta, centerPoint.y, 0)
+        rect_start = adsk.core.Point3D.create(center_point.x - width_delta, center_point.y + 2*height_delta, 0)
+        rect_end   = adsk.core.Point3D.create(center_point.x + width_delta, center_point.y, 0)
     elif direction is Direction.NEGATIVE_Y:
-        rectStart = adsk.core.Point3D.create(centerPoint.x - delta, centerPoint.y, 0)
-        rectEnd   = adsk.core.Point3D.create(centerPoint.x + delta, centerPoint.y - 2*delta, 0)
+        rect_start = adsk.core.Point3D.create(center_point.x - width_delta, center_point.y, 0)
+        rect_end   = adsk.core.Point3D.create(center_point.x + width_delta, center_point.y - 2*height_delta, 0)
     else:
         raise ValueError("Invalid direction.")
 
-    sketch = selectedCurve.parentSketch
-    newRect = sketch.sketchCurves.sketchLines.addTwoPointRectangle(rectStart, rectEnd)
-    newRectLine = None
-    for line in newRect:
+    sketch = selected_curve.parentSketch
+    new_rect = sketch.sketchCurves.sketchLines.addTwoPointRectangle(rect_start, rect_end)
+    new_rect_line = None
+    for line in new_rect:
         ls = line.startSketchPoint.geometry
         le = line.endSketchPoint.geometry
         axis = 'x' if abs(le.x - ls.x) > abs(le.y - ls.y) else 'y'
-        nonDominantAxis = 'y' if axis == 'x' else 'x'
-        if axis == dominantAxis and getattr(ls, nonDominantAxis) == getattr(startPoint, nonDominantAxis):
-            newRectLine = line
+        non_dominant_axis = 'y' if axis == 'x' else 'x'
+        if axis == dominant_axis and getattr(ls, non_dominant_axis) == getattr(start_point, non_dominant_axis):
+            new_rect_line = line
             break
 
-    if newRectLine is None:
+    if new_rect_line is None:
         raise ValueError("Illegal state, can't find newRectLine.")
     
-    result = clean_selected_curve(selectedCurve, newRectLine)
-    newRectLine.deleteMe()
+    result = utils.clean_selected_curve(selected_curve, new_rect_line)
+    new_rect_line.deleteMe()
     return result

@@ -45,61 +45,62 @@ class JitterProcessor:
         return self._selected_line
 
 
-    def _calculate_jitter_direction(self, startPoint, endPoint, dominantAxis, cutOutType):
-        shapeAxis = 'y' if dominantAxis == 'x' else 'x'
-        linePos = (getattr(startPoint, shapeAxis) + getattr(endPoint, shapeAxis)) / 2
-        farthestDistance = 0
-        farthestPoint = None
+    def _calculate_jitter_direction(self, start_point, end_point, dominant_axis, cut_out_type):
+        shape_axis = 'y' if dominant_axis == 'x' else 'x'
+        line_pos = (getattr(start_point, shape_axis) + getattr(end_point, shape_axis)) / 2
+        farthest_distance = 0
+        farthest_point = None
         for point in self._sketch.sketchPoints:
             if point.isVisible:
                 pt = point.geometry
-                distance = abs(getattr(pt, shapeAxis) - linePos)
-                if distance > farthestDistance:
-                    farthestDistance = distance
-                    farthestPoint = getattr(pt, shapeAxis)
+                distance = abs(getattr(pt, shape_axis) - line_pos)
+                if distance > farthest_distance:
+                    farthest_distance = distance
+                    farthest_point = getattr(pt, shape_axis)
         # Determine direction based on farthest point (simplified logic)
-        if shapeAxis == 'x':
-            if cutOutType == 'concave':
-                return Direction.POSITIVE_X if farthestPoint >= startPoint.x else Direction.NEGATIVE_X
+        if shape_axis == 'x':
+            if cut_out_type == 'concave':
+                return Direction.POSITIVE_X if farthest_point >= start_point.x else Direction.NEGATIVE_X
             else:
-                return Direction.NEGATIVE_X if farthestPoint >= startPoint.x else Direction.POSITIVE_X
+                return Direction.NEGATIVE_X if farthest_point >= start_point.x else Direction.POSITIVE_X
         else:
-            if cutOutType == 'concave':
-                return Direction.POSITIVE_Y if farthestPoint >= startPoint.y else Direction.NEGATIVE_Y
+            if cut_out_type == 'concave':
+                return Direction.POSITIVE_Y if farthest_point >= start_point.y else Direction.NEGATIVE_Y
             else:
-                return Direction.NEGATIVE_Y if farthestPoint >= startPoint.y else Direction.POSITIVE_Y
+                return Direction.NEGATIVE_Y if farthest_point >= start_point.y else Direction.POSITIVE_Y
 
 
-    def _recursive_cut(self, selectedLine, startPoint, endPoint, dominantAxis, minSize, maxSize, recurse):
-        cutOutType = random.choice(['convex', 'concave'])
-        direction = self._calculate_jitter_direction(startPoint, endPoint, dominantAxis, cutOutType)
-        shapeCreator = random_shape() # Randomly decide the type of cut to make
-        cutSize = random_size(minSize, maxSize)
-        newCurves = shapeCreator(selectedLine, startPoint, endPoint, dominantAxis, cutSize, direction)
+    def _recursive_cut(self, selected_curve, start_point, end_point, dominant_axis, min_size, max_size,
+                       recurse):
+        cut_out_type = random.choice(['convex', 'concave'])
+        direction = self._calculate_jitter_direction(start_point, end_point, dominant_axis, cut_out_type)
+        shape_creator = random_shape() # Randomly decide the type of cut to make
+        cut_size = random_size(min_size, max_size)
+        new_curves = shape_creator(selected_curve, start_point, end_point, dominant_axis, cut_size, direction)
         if recurse:
-            for curve in newCurves:
-                # Make sure the segment to be cut is three times the size of the cut so that the
-                # remaining pieces of the segment are proportionate to the cut size
-                if curve.length < (cutSize * 3):
+            for curve in new_curves:
+                # Make sure the remaining pieces of the segment, to the left and right of the cut are
+                # proportionate to the cut size.
+                if (curve.length / 3) < min_size or curve.length < (max_size * .25):
                     continue
                 self._recursive_cut(curve, curve.startSketchPoint.geometry, curve.endSketchPoint.geometry,
-                                   dominantAxis, minSize, maxSize, recurse)
+                                   dominant_axis, min_size, max_size, recurse)
 
 
     def _get_user_input_size(self):
-        cmdDef = self.ui.commandDefinitions.itemById(self.cmdId)
-        if not cmdDef:
-            cmdDef = self.ui.commandDefinitions.addButtonDefinition(
+        cmd_def = self.ui.commandDefinitions.itemById(self.cmdId)
+        if not cmd_def:
+            cmd_def = self.ui.commandDefinitions.addButtonDefinition(
                 self.cmdId,
                 'Edge Jitter',
                 'Runs the jitter processor'
             )
 
         on_command_created = MyCommandCreatedHandler(self)
-        cmdDef.commandCreated.add(on_command_created)
+        cmd_def.commandCreated.add(on_command_created)
         self.handlers.append(on_command_created)
 
-        cmdDef.execute()
+        cmd_def.execute()
         adsk.autoTerminate(False)
 
     def callback_from_size_input(self):
@@ -114,12 +115,12 @@ class JitterProcessor:
                             self._min_size, self._max_size, self._recurse)
         return True
 
-    def set_min_size(self, minSize):
-        self._min_size = minSize
+    def set_min_size(self, min_size):
+        self._min_size = min_size
         return self._min_size
 
-    def set_max_size(self, maxSize):
-        self._max_size = maxSize
+    def set_max_size(self, max_size):
+        self._max_size = max_size
         return self._max_size
 
     def set_recurse(self, recurse):
@@ -132,7 +133,9 @@ class JitterProcessor:
             return
         self._start_point = self._selected_line.startSketchPoint.geometry
         self._end_point = self._selected_line.endSketchPoint.geometry
-        self._dominant_axis = 'x' if abs(self._end_point.x - self._start_point.x) > abs(self._end_point.y - self._start_point.y) else 'y'
+        self._dominant_axis = 'x' if \
+            abs(self._end_point.x - self._start_point.x) > abs(self._end_point.y - self._start_point.y) \
+                else 'y'
         self._get_user_input_size()
 
     def stop(self):
