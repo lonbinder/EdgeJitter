@@ -1,52 +1,28 @@
-import adsk.core, adsk.fusion, traceback, random
+import adsk.core
+import adsk.fusion
 from constants import Direction
+import random
 from utils import random_size
 from shapes.shape_factory import random_shape
-from handlers import MyCommandCreatedHandler
 
 class JitterProcessor:
 
-    # ----- CONSTANTS -----
-    cmdId = 'JitterProcessor'
-
-
     # ----- CONSTRUCTORS -----
 
-    def __init__(self, ui):
+    def __init__(self, ui, selected_curve, min_size, max_size=None, recurse=False):
         self.ui = ui
-        self._selected_line = None
-        self._sketch = None
-        self._start_point = None
-        self._end_point = None
+        self._selected_curve = selected_curve
+        self._min_size = min_size
+        self._max_size = self._min_size if not max_size else max_size
+        self._recurse = recurse
+        self._sketch = self._selected_curve.parentSketch
         self._dominant_axis = None
-        self._min_size = None
-        self._max_size = None
-        self._recurse = None
-        self.handlers = []
-        self.preview_displayed = False
-        self.preview_requested = False
 
 
     # ----- METHODS -----
 
-    def _get_selected_line(self):
-        if self._selected_line is None:
-            selections = self.ui.activeSelections
-            if selections.count != 1:
-                self.ui.messageBox('Please select exactly one line in a sketch.')
-                return None
-
-            self._selected_line = selections[0].entity
-            if not isinstance(self._selected_line, adsk.fusion.SketchLine):
-                self._selected_line = None
-                self.ui.messageBox('Selected entity is not a line. Please select a line.')
-            else:
-                self._sketch = self._selected_line.parentSketch
-        return self._selected_line
-
-
-    def _calculate_jitter_direction(self, start_point, end_point, dominant_axis, cut_out_type):
-        shape_axis = 'y' if dominant_axis == 'x' else 'x'
+    def _calculate_jitter_direction(self, start_point, end_point, cut_out_type):
+        shape_axis = 'y' if self._dominant_axis == 'x' else 'x'
         line_pos = (getattr(start_point, shape_axis) + getattr(end_point, shape_axis)) / 2
         farthest_distance = 0
         farthest_point = None
@@ -57,6 +33,20 @@ class JitterProcessor:
                 if distance > farthest_distance:
                     farthest_distance = distance
                     farthest_point = getattr(pt, shape_axis)
+        if not farthest_point:
+            # If no farther point found, consider using the origin
+            distance = abs(getattr(self._sketch.origin, shape_axis) - line_pos)
+            if distance != 0:
+                # Ok, we're using the origin!
+                farthest_point = getattr(self._sketch.origin, shape_axis)
+            else:
+                # No good on origin, because the line is intersecting the origin.
+                # We'll just make a "far" point
+                farthest_point = adsk.core.Point3D.create(
+                        self._sketch.origin.x + 1 if shape_axis == 'x' else 0,
+                        self._sketch.origin.y + 1 if shape_axis == 'y' else 0,
+                        self._sketch.origin.z)
+        
         # Determine direction based on farthest point (simplified logic)
         if shape_axis == 'x':
             if cut_out_type == 'concave':
@@ -70,77 +60,63 @@ class JitterProcessor:
                 return Direction.NEGATIVE_Y if farthest_point >= start_point.y else Direction.POSITIVE_Y
 
 
-    def _recursive_cut(self, selected_curve, start_point, end_point, dominant_axis, min_size, max_size,
+    def _recursive_cut(self, selected_curve, start_point, end_point, min_size, max_size,
                        recurse):
+        # if not selected_curve.isValid:
+        #     return None
         cut_out_type = random.choice(['convex', 'concave'])
-        direction = self._calculate_jitter_direction(start_point, end_point, dominant_axis, cut_out_type)
+        direction = self._calculate_jitter_direction(start_point, end_point, cut_out_type)
         shape_creator = random_shape() # Randomly decide the type of cut to make
         cut_size = random_size(min_size, max_size)
-        new_curves = shape_creator(selected_curve, start_point, end_point, dominant_axis, cut_size, direction)
+        # Make sure the remaining pieces of the segment, to the left and right of the cut are
+        # proportionate to the cut size.
+        if not selected_curve or not selected_curve.isValid:
+            pass
+        if (selected_curve.length * .75) <= cut_size:
+            return None
+        new_curves = shape_creator(selected_curve, start_point, end_point, self._dominant_axis, cut_size, direction)
         if recurse:
-            for curve in new_curves:
-                # Make sure the remaining pieces of the segment, to the left and right of the cut are
-                # proportionate to the cut size.
-                if (curve.length / 3) < min_size or curve.length < (max_size * .25):
+            i = 0
+            while i < len(new_curves):
+                curve = new_curves.item(i)
+                if not curve:
+                    pass
+                if not curve.isValid:
+                    new_curves.removeByIndex(i)
                     continue
-                self._recursive_cut(curve, curve.startSketchPoint.geometry, curve.endSketchPoint.geometry,
-                                   dominant_axis, min_size, max_size, recurse)
+                recursed_curves = self._recursive_cut(curve, curve.startSketchPoint.geometry, 
+                                                      curve.endSketchPoint.geometry, min_size, max_size, recurse)
+                i = i + 1 # work was done, increment the index
+                if recursed_curves:
+                    for recurse_curve in recursed_curves:
+                        if recurse_curve.isValid:
+                            new_curves.add(recurse_curve)
+        return new_curves
+    
 
-
-    def _get_user_input_size(self):
-        cmd_def = self.ui.commandDefinitions.itemById(self.cmdId)
-        if not cmd_def:
-            cmd_def = self.ui.commandDefinitions.addButtonDefinition(
-                self.cmdId,
-                'Edge Jitter',
-                'Runs the jitter processor'
-            )
-
-        on_command_created = MyCommandCreatedHandler(self)
-        cmd_def.commandCreated.add(on_command_created)
-        self.handlers.append(on_command_created)
-
-        cmd_def.execute()
-        adsk.autoTerminate(False)
-
-    def callback_from_size_input(self):
+    def generate(self):
+        if self._selected_curve is None:
+            return
+        
         if self._min_size is None or self._max_size is None:
             self.ui.messageBox("Provide valid numeric input sizes.")
             return False
         if self._min_size <= 0 or self._max_size >= 100 or self._min_size > self._max_size:
             self.ui.messageBox("Ensure min < max and within valid range.")
             return False
+        if self._max_size >= (self._selected_curve.length / 3):
+            # This is really important, not just for proportionality, but also because if we cut a segment
+            # equal to, or longer than, 1/3rd of the original curve length, it will delete the original curve
+            # and the transacation rollback of the preview command does _not_ undo that deletion! It's a bit
+            # bananas.
+            self.ui.messageBox(f"Max cut must be less than 1/3rd of selected curve length ({self._selected_curve.length} cm).")
+            return False
 
-        self._recursive_cut(self._selected_line, self._start_point, self._end_point, self._dominant_axis,
-                            self._min_size, self._max_size, self._recurse)
-        return True
-
-    def set_min_size(self, min_size):
-        self._min_size = min_size
-        return self._min_size
-
-    def set_max_size(self, max_size):
-        self._max_size = max_size
-        return self._max_size
-
-    def set_recurse(self, recurse):
-        self._recurse = recurse
-        return self._recurse
-    
-    def run(self):
-        self._selected_line = self._get_selected_line()
-        if self._selected_line is None:
-            return
-        self._start_point = self._selected_line.startSketchPoint.geometry
-        self._end_point = self._selected_line.endSketchPoint.geometry
+        sc_start_point = self._selected_curve.startSketchPoint.geometry
+        sc_end_point = self._selected_curve.endSketchPoint.geometry
         self._dominant_axis = 'x' if \
-            abs(self._end_point.x - self._start_point.x) > abs(self._end_point.y - self._start_point.y) \
+            abs(sc_end_point.x - sc_start_point.x) > abs(sc_end_point.y - sc_start_point.y) \
                 else 'y'
-        self._get_user_input_size()
-
-    def stop(self):
-        try:
-            pass  # Implement proper shutdown.
-        except Exception:
-            if self.ui:
-                self.ui.messageBox('Failed:\n{}'.format(traceback.format_exc()))
+        
+        self._recursive_cut(self._selected_curve, sc_start_point, sc_end_point, self._min_size, self._max_size, self._recurse)
+        return True

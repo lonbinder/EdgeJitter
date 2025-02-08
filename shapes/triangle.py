@@ -50,6 +50,6 @@ def create_shape(selected_curve: adsk.fusion.SketchCurve, start_point: adsk.core
                                       center_point.z)
 
     lines = selected_curve.parentSketch.sketchCurves.sketchLines
-    line1 = lines.addByTwoPoints(tri_start_point, tri_mid_point)
-    line2 = lines.addByTwoPoints(tri_mid_point, tri_end_point)
+    lines.addByTwoPoints(tri_start_point, tri_mid_point)
+    lines.addByTwoPoints(tri_mid_point, tri_end_point)
     return utils.clean_selected_curve_by_points(selected_curve, tri_start_point, tri_end_point)

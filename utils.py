@@ -47,31 +47,38 @@ def clean_selected_curve_by_points(original_curve: adsk.fusion.SketchCurve, new_
     Raises:
         RuntimeError: If the overlapping segment cannot be found and removed.
     """
-    potential_curves = original_curve.split(new_curve_start_point)
-    for curve in potential_curves:
-        try:
-            local_curves = curve.split(new_curve_end_point)
-            for curve in local_curves:
-                if curve not in potential_curves:
-                    potential_curves.add(curve)
-            break
-        except Exception:
-            pass
+    trim_mid_point = calc_center_point(new_curve_start_point, new_curve_end_point)
+    return original_curve.trim(trim_mid_point)
 
-    curve_to_delete = None
-    for curve in potential_curves:
-        sp = curve.startSketchPoint.geometry
-        ep = curve.endSketchPoint.geometry
-        if ((sp.isEqualTo(new_curve_start_point) or sp.isEqualTo(new_curve_end_point)) and
-            (ep.isEqualTo(new_curve_start_point) or ep.isEqualTo(new_curve_end_point))):
-            curve_to_delete = curve
-            break
-    if curve_to_delete is None:
-        raise RuntimeError(f"Unable to find middle curve for newCurve points.")
+
+
+    # potential_curves = original_curve.split(new_curve_start_point)
+    # for curve in potential_curves:
+    #     try:
+    #         local_curves = curve.split(new_curve_end_point)
+    #         for curve in local_curves:
+    #             if curve not in potential_curves:
+    #                 potential_curves.add(curve)
+    #         break
+    #     except Exception:
+    #         pass
+
+    # curve_to_delete = None
+    # for curve in potential_curves:
+    #     sp = curve.startSketchPoint.geometry
+    #     ep = curve.endSketchPoint.geometry
+    #     if ((sp.isEqualTo(new_curve_start_point) or sp.isEqualTo(new_curve_end_point)) and
+    #         (ep.isEqualTo(new_curve_start_point) or ep.isEqualTo(new_curve_end_point))):
+    #         curve_to_delete = curve
+    #         break
+    # if curve_to_delete is None:
+    #     raise RuntimeError(f"Unable to find middle curve for newCurve points.")
         
-    potential_curves.removeByItem(curve_to_delete)
-    curve_to_delete.deleteMe()
-    return potential_curves
+    # if curve_to_delete == original_selected_curve:
+    #     pass
+    # potential_curves.removeByItem(curve_to_delete)
+    # curve_to_delete.deleteMe()
+    # return potential_curves
 
 
 def random_size(min_size: float, max_size: float):
